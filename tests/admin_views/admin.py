@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import, unicode_literals
+from __future__ import unicode_literals
 
 import tempfile
 import os
@@ -29,8 +29,9 @@ from .models import (Article, Chapter, Account, Media, Child, Parent, Picture,
     Album, Question, Answer, ComplexSortedPerson, PluggableSearchPerson, PrePopulatedPostLargeSlug,
     AdminOrderedField, AdminOrderedModelMethod, AdminOrderedAdminMethod,
     AdminOrderedCallable, Report, Color2, UnorderedObject, MainPrepopulated,
-    RelatedPrepopulated, UndeletableObject, UserMessenger, Simple, Choice,
-    ShortMessage, Telegram)
+    RelatedPrepopulated, UndeletableObject, UnchangeableObject, UserMessenger, Simple, Choice,
+    ShortMessage, Telegram, FilteredManager, EmptyModelHidden,
+    EmptyModelVisible, EmptyModelMixin)
 
 
 def callable_year(dt_value):
@@ -660,12 +661,25 @@ class UndeletableObjectAdmin(admin.ModelAdmin):
         return super(UndeletableObjectAdmin, self).change_view(*args, **kwargs)
 
 
+class UnchangeableObjectAdmin(admin.ModelAdmin):
+    def get_urls(self):
+        # Disable change_view, but leave other urls untouched
+        urlpatterns = super(UnchangeableObjectAdmin, self).get_urls()
+        return [p for p in urlpatterns if not p.name.endswith("_change")]
+
+
 def callable_on_unknown(obj):
     return obj.unknown
 
 
 class AttributeErrorRaisingAdmin(admin.ModelAdmin):
     list_display = [callable_on_unknown, ]
+
+
+class CustomManagerAdmin(admin.ModelAdmin):
+    def get_queryset(self, request):
+        return FilteredManager.objects
+
 
 class MessageTestingAdmin(admin.ModelAdmin):
     actions = ["message_debug", "message_info", "message_success",
@@ -695,6 +709,36 @@ class ChoiceList(admin.ModelAdmin):
     readonly_fields = ['choice']
     fields = ['choice']
 
+
+# Tests for ticket 11277 ----------------------------------
+
+class FormWithoutHiddenField(forms.ModelForm):
+    first = forms.CharField()
+    second = forms.CharField()
+
+class FormWithoutVisibleField(forms.ModelForm):
+    first = forms.CharField(widget=forms.HiddenInput)
+    second = forms.CharField(widget=forms.HiddenInput)
+
+class FormWithVisibleAndHiddenField(forms.ModelForm):
+    first = forms.CharField(widget=forms.HiddenInput)
+    second = forms.CharField()
+
+class EmptyModelVisibleAdmin(admin.ModelAdmin):
+    form = FormWithoutHiddenField
+    fieldsets = (
+        (None, {
+            'fields':(('first', 'second'),),
+        }),
+    )
+
+class EmptyModelHiddenAdmin(admin.ModelAdmin):
+    form = FormWithoutVisibleField
+    fieldsets = EmptyModelVisibleAdmin.fieldsets
+
+class EmptyModelMixinAdmin(admin.ModelAdmin):
+    form = FormWithVisibleAndHiddenField
+    fieldsets = EmptyModelVisibleAdmin.fieldsets
 
 site = admin.AdminSite(name="admin")
 site.register(Article, ArticleAdmin)
@@ -745,6 +789,7 @@ site.register(Report, ReportAdmin)
 site.register(MainPrepopulated, MainPrepopulatedAdmin)
 site.register(UnorderedObject, UnorderedObjectAdmin)
 site.register(UndeletableObject, UndeletableObjectAdmin)
+site.register(UnchangeableObject, UnchangeableObjectAdmin)
 
 # We intentionally register Promo and ChapterXtra1 but not Chapter nor ChapterXtra2.
 # That way we cover all four cases:
@@ -754,7 +799,7 @@ site.register(UndeletableObject, UndeletableObjectAdmin)
 #     related OneToOne object not registered in admin
 # when deleting Book so as exercise all four troublesome (w.r.t escaping
 # and calling force_text to avoid problems on Python 2.3) paths through
-# contrib.admin.util's get_deleted_objects function.
+# contrib.admin.utils's get_deleted_objects function.
 site.register(Book, inlines=[ChapterInline])
 site.register(Promo)
 site.register(ChapterXtra1, ChapterXtra1Admin)
@@ -765,6 +810,7 @@ site.register(Question)
 site.register(Answer)
 site.register(PrePopulatedPost, PrePopulatedPostAdmin)
 site.register(ComplexSortedPerson, ComplexSortedPersonAdmin)
+site.register(FilteredManager, CustomManagerAdmin)
 site.register(PluggableSearchPerson, PluggableSearchPersonAdmin)
 site.register(PrePopulatedPostLargeSlug, PrePopulatedPostLargeSlugAdmin)
 site.register(AdminOrderedField, AdminOrderedFieldAdmin)
@@ -775,6 +821,9 @@ site.register(Color2, CustomTemplateFilterColorAdmin)
 site.register(Simple, AttributeErrorRaisingAdmin)
 site.register(UserMessenger, MessageTestingAdmin)
 site.register(Choice, ChoiceList)
+site.register(EmptyModelHidden, EmptyModelHiddenAdmin)
+site.register(EmptyModelVisible, EmptyModelVisibleAdmin)
+site.register(EmptyModelMixin, EmptyModelMixinAdmin)
 
 # Register core models we need in our tests
 from django.contrib.auth.models import User, Group
