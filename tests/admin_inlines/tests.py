@@ -1,4 +1,4 @@
-from __future__ import absolute_import, unicode_literals
+from __future__ import unicode_literals
 
 from django.contrib.admin.tests import AdminSeleniumWebDriverTestCase
 from django.contrib.admin.helpers import InlineAdminForm
@@ -8,11 +8,12 @@ from django.test import TestCase
 from django.test.utils import override_settings
 
 # local test models
-from .admin import InnerInline, TitleInline, site
+from .admin import InnerInline
 from .models import (Holder, Inner, Holder2, Inner2, Holder3, Inner3, Person,
     OutfitItem, Fashionista, Teacher, Parent, Child, Author, Book, Profile,
     ProfileCollection, ParentModelWithCustomPk, ChildModel1, ChildModel2,
-    Sighting, Title, Novel, Chapter, FootNote, BinaryTree)
+    Sighting, Novel, Chapter, FootNote, BinaryTree, SomeParentModel,
+    SomeChildModel)
 
 
 @override_settings(PASSWORD_HASHERS=('django.contrib.auth.hashers.SHA1PasswordHasher',))
@@ -45,7 +46,7 @@ class TestInline(TestCase):
     def test_readonly_stacked_inline_label(self):
         """Bug #13174."""
         holder = Holder.objects.create(dummy=42)
-        inner = Inner.objects.create(holder=holder, dummy=42, readonly='')
+        Inner.objects.create(holder=holder, dummy=42, readonly='')
         response = self.client.get('/admin/admin_inlines/holder/%i/'
                                    % holder.id)
         self.assertContains(response, '<label>Inner readonly label:</label>')
@@ -126,6 +127,16 @@ class TestInline(TestCase):
         response = self.client.get('/admin/admin_inlines/capofamiglia/add/')
         self.assertContains(response, '<img src="/static/admin/img/icon-unknown.gif" class="help help-tooltip" width="10" height="10" alt="(Help text for ReadOnlyInline)" title="Help text for ReadOnlyInline" />', 1)
 
+    def test_inline_hidden_field_no_column(self):
+        """#18263 -- Make sure hidden fields don't get a column in tabular inlines"""
+        parent = SomeParentModel.objects.create(name='a')
+        SomeChildModel.objects.create(name='b', position='0', parent=parent)
+        SomeChildModel.objects.create(name='c', position='1', parent=parent)
+        response = self.client.get('/admin/admin_inlines/someparentmodel/%s/' % parent.pk)
+        self.assertNotContains(response, '<td class="field-position">')
+        self.assertContains(response, (
+            '<input id="id_somechildmodel_set-1-position" '
+            'name="somechildmodel_set-1-position" type="hidden" value="1" />'))
 
     def test_non_related_name_inline(self):
         """
@@ -195,7 +206,7 @@ class TestInline(TestCase):
 
     def test_custom_get_extra_form(self):
         bt_head = BinaryTree.objects.create(name="Tree Head")
-        bt_child = BinaryTree.objects.create(name="First Child", parent=bt_head)
+        BinaryTree.objects.create(name="First Child", parent=bt_head)
 
         # The maximum number of forms should respect 'get_max_num' on the
         # ModelAdmin
@@ -575,7 +586,6 @@ class SeleniumFirefoxTests(AdminSeleniumWebDriverTestCase):
         Ensure that the "Add another XXX" link correctly adds items to the
         inline form.
         """
-        from selenium.common.exceptions import TimeoutException
         self.admin_login(username='super', password='secret')
         self.selenium.get('%s%s' % (self.live_server_url,
             '/admin/admin_inlines/profilecollection/add/'))
